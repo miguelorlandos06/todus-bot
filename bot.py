@@ -9,8 +9,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from ptbcontrib.aiohttp_request import AiohttpRequest
 from todus_client import (
     login_with_phone_only, ToDusXMPP,
-    reserve_upload_url, upload_to_s3,
-    FILE_TYPE_VIDEO, FILE_TYPE_IMAGE, FILE_TYPE_VOICE, FILE_TYPE_DOC,
 )
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -132,10 +130,18 @@ def run_ffprobe(path):
     except Exception:
         return {}
 
-def upload_and_get_url(xmpp, data, file_type, content_type):
-    put_url, get_url = reserve_upload_url(xmpp, len(data), file_type)
-    upload_to_s3(put_url, data, content_type)
-    return get_url
+STREAM_BUCKET = "https://s3.todus.cu/stream"
+
+def upload_to_stream(data, filename, content_type="application/octet-stream"):
+    """Sube al bucket público stream de toDus con PUT directo."""
+    prefix = uuid.uuid4().hex[:8]
+    object_name = f"{prefix}_{filename}"
+    url = f"{STREAM_BUCKET}/{quote(object_name)}"
+    r = requests.put(url, data=data,
+        headers={"Content-Type": content_type, "Content-Length": str(len(data))},
+        timeout=600, verify=False)
+    r.raise_for_status()
+    return url
 
 def send_stanza(xmpp, phone, url, ftype, size, name, meta=None, thumb_url=""):
     msg_id = uuid.uuid4().hex[:16]
@@ -270,22 +276,23 @@ async def handle_phone(update, context):
                     thumb_data = f.read()
                 await status.edit_text("Subiendo thumbnail...")
                 def _up_thumb():
-                    return upload_and_get_url(xmpp, thumb_data, FILE_TYPE_IMAGE, "image/jpeg")
+                    return upload_to_stream(thumb_data, "thumb.jpg", "image/jpeg")
                 thumb_url = await asyncio.to_thread(_up_thumb)
                 log.info(f"Thumb: {thumb_url}")
         await status.edit_text("Subiendo archivo a S3...")
         with open(local_file, "rb") as f:
             data = f.read()
         if ftype == "video":
-            fcode, ctype = FILE_TYPE_VIDEO, "video/mp4"
+            ctype = "video/mp4"
         elif ftype == "image":
-            fcode, ctype = FILE_TYPE_IMAGE, "image/jpeg"
+            ctype = "image/jpeg"
         elif ftype == "audio":
-            fcode, ctype = FILE_TYPE_VOICE, "audio/mpeg"
+            ctype = "audio/mpeg"
         else:
-            fcode, ctype = FILE_TYPE_DOC, "application/octet-stream"
+            ctype = "application/octet-stream"
+        name = Path(urlparse(url).path).name or local_file.name
         def _up_main():
-            return upload_and_get_url(xmpp, data, fcode, ctype)
+            return upload_to_stream(data, name, ctype)
         get_url = await asyncio.to_thread(_up_main)
         await status.edit_text("Enviando mensaje...")
         name = Path(urlparse(url).path).name or local_file.name
