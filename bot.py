@@ -166,7 +166,7 @@ async def cmd_start(update, context):
 
 async def cmd_status(update, context):
     alive = _is_xmpp_alive(_xmpp)
-    await update.message.reply_text(f"🔌 XMPP: {✅ if alive else ❌}\n📱 {TODUS_PHONE}")
+    await update.message.reply_text("Estado XMPP: " + ("OK" if alive else "NO") + " | Telefono: " + TODUS_PHONE)
 
 async def handle_url(update, context):
     uid = update.effective_user.id
