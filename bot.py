@@ -45,7 +45,7 @@ async def get_xmpp():
         log.info("Login toDus...")
         jwt = await asyncio.to_thread(login_with_phone_only, TODUS_PHONE)
         xmpp = ToDusXMPP(TODUS_PHONE, jwt)
-        await asyncio.to_thread(xmpp.connect)
+        await asyncio.to_thread(xmpp.start)
         _xmpp = xmpp
         return _xmpp
 
