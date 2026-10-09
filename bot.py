@@ -159,8 +159,8 @@ def run_ffprobe(path):
         return {}
 
 
-def upload_to_stream_with_progress(data, filename, content_type, on_progress=None):
-    """Sube a S3 con progreso (chunked)."""
+async def upload_to_stream_with_progress(session, data, filename, content_type, on_progress=None):
+    """Sube a S3 con aiohttp y reporta progreso."""
     prefix = uuid.uuid4().hex[:8]
     object_name = f"{prefix}_{filename}"
     url = f"{STREAM_BUCKET}/{quote(object_name)}"
@@ -169,32 +169,25 @@ def upload_to_stream_with_progress(data, filename, content_type, on_progress=Non
     sent = 0
     last_pct = -1
 
-    # Usamos requests con un file-like para streaming
-    import io
-    class ProgressIO(io.BytesIO):
-        def read(self, n=-1):
-            nonlocal sent, last_pct
-            chunk = super().read(n)
-            if chunk:
-                sent += len(chunk)
-                if on_progress and total:
-                    pct = int(sent / total * 100)
-                    if pct - last_pct >= 5 or pct == 100:
-                        last_pct = pct
-                        try:
-                            on_progress(sent, total, pct)
-                        except Exception:
-                            pass
-            return chunk
+    async def gen():
+        nonlocal sent, last_pct
+        for i in range(0, total, chunk_size):
+            chunk = data[i:i+chunk_size]
+            sent += len(chunk)
+            yield chunk
+            if on_progress and total:
+                pct = int(sent / total * 100)
+                if pct - last_pct >= 5 or pct == 100:
+                    last_pct = pct
+                    await on_progress(sent, total, pct)
 
-    r = requests.put(
-        url, data=ProgressIO(data),
-        headers={"Content-Type": content_type, "Content-Length": str(total)},
-        timeout=600, verify=False,
-    )
-    r.raise_for_status()
+    headers = {"Content-Type": content_type, "Content-Length": str(total)}
+    timeout = aiohttp.ClientTimeout(total=600)
+    async with session.put(url, data=gen(), headers=headers, timeout=timeout) as r:
+        if r.status >= 400:
+            txt = await r.text()
+            raise RuntimeError(f"S3 {r.status}: {txt[:200]}")
     return url
-
 
 def send_stanza(xmpp, phone, url, ftype, size, name, meta=None, thumb_url=""):
     msg_id = uuid.uuid4().hex[:16]
@@ -301,9 +294,7 @@ async def process_single_with_progress(xmpp, session, url, phone, status_msg,
                     with open(thumb_path, "rb") as f:
                         thumb_data = f.read()
                     await on_edit(f"🖼️ Thumbnail [{index}/{total}]...", force=True)
-                    def _up_thumb():
-                        return upload_to_stream_with_progress(thumb_data, "thumb.jpg", "image/jpeg")
-                    thumb_url = await asyncio.to_thread(_up_thumb)
+                    thumb_url = await upload_to_stream_with_progress(session, thumb_data, "thumb.jpg", "image/jpeg")
 
             # ─── SUBIDA A S3 CON PROGRESO ───
             with open(local_file, "rb") as f:
@@ -314,24 +305,16 @@ async def process_single_with_progress(xmpp, session, url, phone, status_msg,
             else: ctype = "application/octet-stream"
             name = Path(urlparse(url).path).name or local_file.name
 
-            loop = asyncio.get_running_loop()
-            last_up = {"pct": -1}
-
-            def on_up_sync(sent, total, pct):
-                if pct - last_up["pct"] < 5 and pct != 100:
-                    return
-                last_up["pct"] = pct
+            async def on_up(sent, total, pct):
                 txt = (
                     f"⬆️ Subiendo a S3 [{index}/{total}]\n"
                     f"[{progress_bar(pct)}] {pct}%\n"
                     f"{fmt_size(sent)}/{fmt_size(total)}"
                 )
-                asyncio.run_coroutine_threadsafe(on_edit(txt), loop)
+                await on_edit(txt)
 
             await on_edit(f"⬆️ Subiendo a S3 [{index}/{total}]...", force=True)
-            def _up_main():
-                return upload_to_stream_with_progress(data, name, ctype, on_up_sync)
-            get_url = await asyncio.to_thread(_up_main)
+            get_url = await upload_to_stream_with_progress(session, data, name, ctype, on_up)
 
             # ─── ENVÍO POR TODUS ───
             await on_edit(f"📤 Enviando por toDus [{index}/{total}]...", force=True)
