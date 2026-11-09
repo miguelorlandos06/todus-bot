@@ -1,87 +1,101 @@
-import json
-import re
-import threading
-import os
-import urllib.request
+import json, re, threading, os, urllib.request, traceback
 from todus import ToDusClient2, FileType
 
 PHONE = os.getenv("TODUS_PHONE", "5350155246")
 PASSWORD = os.getenv("TODUS_PASSWORD", "fake1234567890abcdef12345678")
-TODUS_ID = "toDus"
+BOT_JID = f"{PHONE}@im.todus.cu"
 API_URL = "https://api.apklis.cu/v2/application/?package_name=cu.todus.android"
 APK_URL = "https://s3.todus.cu/official/todus/release/rel/toDus_latest.apk"
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 client = ToDusClient2(PHONE, PASSWORD)
 
-def descargar_archivo(url, path):
-    req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=120) as resp, open(path, 'wb') as f:
-        f.write(resp.read())
-    return path
-
-def obtener_info():
+def get_info():
     req = urllib.request.Request(API_URL, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = json.loads(resp.read().decode("utf-8"))
-    
     app = data["results"][0]
     last = app.get("last_release", {})
-    nombre = app.get("name", "toDus")
     version = last.get("version_name", "N/A")
     fecha = app.get("updated", "N/A").split("T")[0]
     tamano = f"{app.get('size', 0) / (1024*1024):.2f} MB"
     icon_url = app.get("icon", "")
     
     changelog_raw = last.get("changelog", "")
-    texto_limpio = re.sub(r"<li[^>]*>", "\n- ", changelog_raw)
+    texto_limpio = re.sub(r"<li[^>]*>", "\n", changelog_raw)
     texto_limpio = re.sub(r"<[^>]+>", "", texto_limpio)
     lineas = [l.strip() for l in texto_limpio.split("\n") if l.strip() and "toDus v" not in l and "Historial" not in l]
-    changelog = "\n".join(lineas) if lineas else "No disponible."
-    
-    texto_info = (
-        f"📱 *{nombre}*\n"
-        f"🏷️ *Versión:* {version}\n"
-        f"📅 *Actualizado:* {fecha}\n"
-        f"💾 *Tamaño:* {tamano}\n\n"
-        f"📝 *Novedades:*\n{changelog}"
+    changelog = "\n".join([f"• {l}" for l in lineas])
+
+    texto = (
+        f"📦 <b>toDus</b> | <code>{version}</code>\n\n"
+        f"📅 <b>Actualizado:</b> {fecha}\n\n"
+        f"💾 <b>Tamaño:</b> {tamano}\n\n"
+        f"📝 <b>Novedades:</b>\n\n"
+        f"{changelog}\n\n"
+        f"🔗 <a href='https://test.apklis.cu/es/applications/cu.todus.android'>Ver en Apklis</a>"
     )
-    return texto_info, icon_url, version
+    return texto, icon_url, version
 
 def on_message(msg):
     if msg.get("type") != "gc": return
     raw = msg.get("raw", "")
     body = (msg.get("body") or "").lower()
-    
-    if f"ui='{TODUS_ID}'" in raw or f'ui="{TODUS_ID}"' in raw:
-        print(f"\n🔔 Mención detectada con comando: {body}")
+
+    if f"ui='{BOT_JID}'" in raw or f'ui="{BOT_JID}"' in raw:
+        print(f"\n🔔 Mención detectada: {body}")
         def procesar():
             grupo_id = msg.get("from", "").split("@")[0]
+            msg_id_original = msg.get("id") # ID del mensaje de la mención
+            
             try:
                 client.send_chat_state(grupo_id, "composing")
-                texto, icon_url, version = obtener_info()
-                
+                texto, icon_url, version = get_info()
+
                 if "apk" in body:
-                    print(f"📦 Enviando APK...")
-                    descargar_archivo(APK_URL, "todus_latest.apk")
-                    apk_final = client.upload_file(open("todus_latest.apk", 'rb').read(), file_type=FileType.FILE, file_name=f"toDus_{version}.apk")
-                    client.send_file_message(grupo_id, apk_final, FileType.FILE, caption=texto, file_name=f"toDus_{version}.apk", file_size=os.path.getsize("todus_latest.apk"))
+                    print("📦 Descargando APK (68MB)...")
+                    req_apk = urllib.request.Request(APK_URL, headers=HEADERS)
+                    with urllib.request.urlopen(req_apk, timeout=300) as resp, open("todus_latest.apk", 'wb') as f:
+                        f.write(resp.read())
+                    
+                    print("☁️ Subiendo APK a ToDus...")
+                    temp_client = ToDusClient2(PHONE, PASSWORD)
+                    temp_client.login()
+                    with open("todus_latest.apk", "rb") as f:
+                        apk_final = temp_client.upload_file(f.read(), file_type=FileType.FILE, file_name=f"toDus_{version}.apk")
+                    
+                    print("🚀 Enviando APK al grupo (citando)...")
+                    # Usamos el cliente de grupos con reply_to_id
+                    client.groups.send_file(grupo_id, apk_final, f"toDus_{version}.apk", os.path.getsize("todus_latest.apk"), caption=texto, reply_to=msg_id_original)
                     os.remove("todus_latest.apk")
                     print("✅ APK enviado.")
+
                 elif "info" in body:
-                    print("🖼️ Enviando Logo + Info...")
-                    if icon_url:
-                        descargar_archivo(icon_url, "logo.png")
-                        img_final = client.upload_file(open("logo.png", 'rb').read(), file_type=FileType.PICTURE, file_name="logo.png")
-                        client.send_image_message(grupo_id, img_final, "logo.png", os.path.getsize("logo.png"), caption=texto)
-                        os.remove("logo.png")
-                    else:
-                        client.send_message(grupo_id, texto)
+                    print("🖼️ Descargando logo...")
+                    req_img = urllib.request.Request(icon_url, headers=HEADERS)
+                    with urllib.request.urlopen(req_img, timeout=15) as resp, open("logo_pro.png", 'wb') as f:
+                        f.write(resp.read())
+                    
+                    print("☁️ Subiendo logo...")
+                    temp_client = ToDusClient2(PHONE, PASSWORD)
+                    temp_client.login()
+                    with open("logo_pro.png", "rb") as f:
+                        img_final = temp_client.upload_file(f.read(), file_type=FileType.PICTURE, file_name="logo_pro.png")
+                    
+                    print("🚀 Enviando Info al grupo (citando)...")
+                    # Usamos el cliente de grupos con reply_to_id
+                    client.groups.send_image(grupo_id, img_final, "logo_pro.png", os.path.getsize("logo_pro.png"), 200, 200, "L6PZfSi_.AyE_3t7t7R**0o#DgR4", texto, reply_to=msg_id_original)
+                    os.remove("logo_pro.png")
                     print("✅ Info enviada.")
+                    
             except Exception as e:
-                print(f"❌ Error: {e}")
+                print("\n❌ ERROR DETALLADO:")
+                traceback.print_exc()
         threading.Thread(target=procesar, daemon=True).start()
 
 client.login()
-print(f"✅ Bot @{TODUS_ID} conectado y escuchando...")
-client.listen_messages(on_message)
+print(f"✅ Bot conectado y escuchando menciones de {BOT_JID}...")
+try:
+    client.listen_messages(on_message)
+except TypeError:
+    client.listen_messages(client.token, on_message)
