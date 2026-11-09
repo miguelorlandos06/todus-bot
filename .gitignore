@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+todus_cache.db
+*.db
+*.db-shm
+*.db-wal
+*.apk
+*.png
+.env
