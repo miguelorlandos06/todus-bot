@@ -84,4 +84,4 @@ def on_message(msg):
 
 client.login()
 print(f"✅ Bot @{TODUS_ID} conectado y escuchando...")
-client.listen_messages(client.token, on_message)
+client.listen_messages(on_message)
