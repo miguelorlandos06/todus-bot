@@ -1,5 +1,5 @@
 import json, re, threading, os, urllib.request, traceback
-from todus import ToDusClient2, FileType
+from todus import ToDusClient2, FileType, util
 
 PHONE = os.getenv("TODUS_PHONE", "5350155246")
 PASSWORD = os.getenv("TODUS_PASSWORD", "fake1234567890abcdef12345678")
@@ -46,27 +46,35 @@ def on_message(msg):
         print(f"\n🔔 Mención detectada: {body}")
         def procesar():
             grupo_id = msg.get("from", "").split("@")[0]
-            msg_id_original = msg.get("id") # ID del mensaje de la mención
+            msg_id_original = msg.get("id")
             
             try:
                 client.send_chat_state(grupo_id, "composing")
                 texto, icon_url, version = get_info()
 
                 if "apk" in body:
-                    print("📦 Descargando APK (68MB)...")
+                    print("📦 Descargando APK...")
                     req_apk = urllib.request.Request(APK_URL, headers=HEADERS)
                     with urllib.request.urlopen(req_apk, timeout=300) as resp, open("todus_latest.apk", 'wb') as f:
                         f.write(resp.read())
                     
-                    print("☁️ Subiendo APK a ToDus...")
+                    print("☁️ Subiendo APK...")
                     temp_client = ToDusClient2(PHONE, PASSWORD)
                     temp_client.login()
                     with open("todus_latest.apk", "rb") as f:
                         apk_final = temp_client.upload_file(f.read(), file_type=FileType.FILE, file_name=f"toDus_{version}.apk")
                     
-                    print("🚀 Enviando APK al grupo (citando)...")
-                    # Usamos el cliente de grupos con reply_to_id
-                    client.groups.send_file(grupo_id, apk_final, f"toDus_{version}.apk", os.path.getsize("todus_latest.apk"), caption=texto, reply_to=msg_id_original)
+                    print("🚀 Enviando APK citando...")
+                    # Usamos el método global que SÍ acepta reply_to y auto-detecta grupo
+                    client.send_file_message(
+                        grupo_id, 
+                        apk_final, 
+                        FileType.FILE, 
+                        caption=texto, 
+                        file_name=f"toDus_{version}.apk", 
+                        file_size=os.path.getsize("todus_latest.apk"), 
+                        reply_to=msg_id_original
+                    )
                     os.remove("todus_latest.apk")
                     print("✅ APK enviado.")
 
@@ -82,9 +90,18 @@ def on_message(msg):
                     with open("logo_pro.png", "rb") as f:
                         img_final = temp_client.upload_file(f.read(), file_type=FileType.PICTURE, file_name="logo_pro.png")
                     
-                    print("🚀 Enviando Info al grupo (citando)...")
-                    # Usamos el cliente de grupos con reply_to_id
-                    client.groups.send_image(grupo_id, img_final, "logo_pro.png", os.path.getsize("logo_pro.png"), 200, 200, "L6PZfSi_.AyE_3t7t7R**0o#DgR4", texto, reply_to=msg_id_original)
+                    print("🚀 Enviando Info citando...")
+                    # Usamos el método global que SÍ acepta reply_to y auto-detecta grupo
+                    client.send_image_message(
+                        grupo_id, 
+                        img_final, 
+                        "logo_pro.png", 
+                        os.path.getsize("logo_pro.png"), 
+                        200, 200, 
+                        "L6PZfSi_.AyE_3t7t7R**0o#DgR4", 
+                        texto, 
+                        reply_to=msg_id_original
+                    )
                     os.remove("logo_pro.png")
                     print("✅ Info enviada.")
                     
