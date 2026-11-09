@@ -1,5 +1,5 @@
 import json, re, threading, os, urllib.request, traceback
-from todus import ToDusClient2, FileType, util
+from todus import ToDusClient2, FileType
 
 PHONE = os.getenv("TODUS_PHONE", "5350155246")
 PASSWORD = os.getenv("TODUS_PASSWORD", "fake1234567890abcdef12345678")
@@ -25,15 +25,17 @@ def get_info():
     texto_limpio = re.sub(r"<li[^>]*>", "\n", changelog_raw)
     texto_limpio = re.sub(r"<[^>]+>", "", texto_limpio)
     lineas = [l.strip() for l in texto_limpio.split("\n") if l.strip() and "toDus v" not in l and "Historial" not in l]
-    changelog = "\n".join([f"• {l}" for l in lineas])
+    
+    # Doble salto de línea entre viñetas para el <pre>
+    changelog = "\n\n".join([f"• {l}" for l in lineas])
 
     texto = (
         f"📦 <b>toDus</b> | <code>{version}</code>\n\n"
-        f"📅 <b>Actualizado:</b> {fecha}\n\n"
-        f"💾 <b>Tamaño:</b> {tamano}\n\n"
-        f"📝 <b>Novedades:</b>\n\n"
-        f"{changelog}\n\n"
-        f"🔗 <a href='https://test.apklis.cu/es/applications/cu.todus.android'>Ver en Apklis</a>"
+        f"📅 <b>Actualizado:</b> <u>{fecha}</u>\n\n"
+        f"💾 <b>Tamaño:</b> <code>{tamano}</code>\n\n"
+        f"📝 <b>NOVEDADES:</b>\n\n"
+        f"<pre>{changelog}</pre>\n\n"
+        f"🔗 <a href='https://test.apklis.cu/es/applications/cu.todus.android'>Descargar la última versión</a>"
     )
     return texto, icon_url, version
 
@@ -46,8 +48,6 @@ def on_message(msg):
         print(f"\n🔔 Mención detectada: {body}")
         def procesar():
             grupo_id = msg.get("from", "").split("@")[0]
-            msg_id_original = msg.get("id")
-            
             try:
                 client.send_chat_state(grupo_id, "composing")
                 texto, icon_url, version = get_info()
@@ -65,7 +65,7 @@ def on_message(msg):
                         apk_final = temp_client.upload_file(f.read(), file_type=FileType.FILE, file_name=f"toDus_{version}.apk")
                     
                     print("🚀 Enviando APK...")
-                    client.groups.send_file(grupo_id, apk_final, f"toDus_{version}.apk", os.path.getsize("todus_latest.apk"), caption=texto, reply_to=msg_id_original)
+                    client.groups.send_file(grupo_id, apk_final, f"toDus_{version}.apk", os.path.getsize("todus_latest.apk"), caption=texto)
                     os.remove("todus_latest.apk")
                     print("✅ APK enviado.")
 
@@ -82,7 +82,7 @@ def on_message(msg):
                         img_final = temp_client.upload_file(f.read(), file_type=FileType.PICTURE, file_name="logo_pro.png")
                     
                     print("🚀 Enviando Info...")
-                    client.groups.send_image(grupo_id, img_final, "logo_pro.png", os.path.getsize("logo_pro.png"), 200, 200, "L6PZfSi_.AyE_3t7t7R**0o#DgR4", texto, reply_to=msg_id_original)
+                    client.groups.send_image(grupo_id, img_final, "logo_pro.png", os.path.getsize("logo_pro.png"), 200, 200, "L6PZfSi_.AyE_3t7t7R**0o#DgR4", texto)
                     os.remove("logo_pro.png")
                     print("✅ Info enviada.")
                     
