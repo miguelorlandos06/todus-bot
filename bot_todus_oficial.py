@@ -64,17 +64,8 @@ def on_message(msg):
                     with open("todus_latest.apk", "rb") as f:
                         apk_final = temp_client.upload_file(f.read(), file_type=FileType.FILE, file_name=f"toDus_{version}.apk")
                     
-                    print("🚀 Enviando APK citando...")
-                    # Usamos el método global que SÍ acepta reply_to y auto-detecta grupo
-                    client.send_file_message(
-                        grupo_id, 
-                        apk_final, 
-                        FileType.FILE, 
-                        caption=texto, 
-                        file_name=f"toDus_{version}.apk", 
-                        file_size=os.path.getsize("todus_latest.apk"), 
-                        reply_to=msg_id_original
-                    )
+                    print("🚀 Enviando APK...")
+                    client.groups.send_file(grupo_id, apk_final, f"toDus_{version}.apk", os.path.getsize("todus_latest.apk"), caption=texto, reply_to=msg_id_original)
                     os.remove("todus_latest.apk")
                     print("✅ APK enviado.")
 
@@ -90,18 +81,8 @@ def on_message(msg):
                     with open("logo_pro.png", "rb") as f:
                         img_final = temp_client.upload_file(f.read(), file_type=FileType.PICTURE, file_name="logo_pro.png")
                     
-                    print("🚀 Enviando Info citando...")
-                    # Usamos el método global que SÍ acepta reply_to y auto-detecta grupo
-                    client.send_image_message(
-                        grupo_id, 
-                        img_final, 
-                        "logo_pro.png", 
-                        os.path.getsize("logo_pro.png"), 
-                        200, 200, 
-                        "L6PZfSi_.AyE_3t7t7R**0o#DgR4", 
-                        texto, 
-                        reply_to=msg_id_original
-                    )
+                    print("🚀 Enviando Info...")
+                    client.groups.send_image(grupo_id, img_final, "logo_pro.png", os.path.getsize("logo_pro.png"), 200, 200, "L6PZfSi_.AyE_3t7t7R**0o#DgR4", texto, reply_to=msg_id_original)
                     os.remove("logo_pro.png")
                     print("✅ Info enviada.")
                     
