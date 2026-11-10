@@ -1,34 +1,44 @@
 name: toDus Bot Oficial
+
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 */5 * * *'   # Cada 5 horas
   push:
     branches: [main]
+
 concurrency:
   group: todus-bot-oficial
   cancel-in-progress: true
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: pip
+
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -U requests pysocks
+          python -m pip install -U requests pysocks httpx
           python -m pip install -e .
+
       - name: Ejecutar bot
         env:
           TODUS_PHONE: ${{ secrets.TODUS_PHONE }}
-          TODUS_PASSWORD: ${{ secrets.TODUS_PASSWORD }}
-        run: python bot_todus_oficial.py
-      - name: Relanzar workflow
-        if: always()
+        run: python bot_definitivo.py
+
+      - name: Re-lanzar si termina por timeout
+        if: always() && github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          sleep 10
-          gh workflow run bot-todus.yml --ref main
+          echo "⏳ Esperando 30s antes de re-lanzar..."
+          sleep 30
+          gh workflow run bot-todus.yml --ref main || echo "⚠️ No se pudo re-lanzar"
